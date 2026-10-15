@@ -269,11 +269,6 @@ body.protege #main input { -webkit-user-select: text; user-select: text; }
 .classe-tete { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
 .classe-reglages { display: flex; flex-wrap: wrap; gap: 12px 22px; align-items: flex-end; }
 .code-classe { max-width: 260px; }
-.duree-classe { max-width: 170px; }
-.minuteur { align-self: flex-start; display: flex; align-items: baseline; gap: 10px; background: var(--gris); color: var(--sur-gris); border-radius: 999px; padding: 6px 16px; }
-.minuteur span { font-size: .85rem; }
-.minuteur b { font-size: 1.35rem; font-variant-numeric: tabular-nums; }
-.minuteur.presque { background: var(--ko); color: #fff; }
 .badge.ferme { background: var(--creux); color: var(--muet); }
 .live { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--ligne); padding-top: 14px; }
 .donnees tr.alerte td { background: var(--ko-doux); }
@@ -1489,17 +1484,13 @@ const Backend = {
     const miens = LS.get('tous', []).filter(function (x) { return x.cle === d.cle && x.ronde === d.ronde && x.moduleId === d.pid; });
     if (miens.some(function (x) { return x.type === 'test-classe'; })) return Promise.resolve({ ok: false, error: 'deja' });
     const n = miens.filter(function (x) { return x.type === 'klas-start'; }).length;
-    const premier = miens.filter(function (x) { return x.type === 'klas-start'; }).map(function (x) { return x.date; }).sort()[0];
     enregistrer({ module: d.module, moduleId: d.pid, etape: 'Test en classe', type: 'klas-start', tentative: n + 1, ronde: d.ronde }, { total: 0, correct: 0, duree: 0, verbes: [], erreurs: [] });
-    return Promise.resolve({ ok: true, redemarrage: n, debut: premier || new Date().toISOString(), maintenant: new Date().toISOString() });
+    return Promise.resolve({ ok: true, redemarrage: n });
   }
 };
-/* durée d'un test en classe : de 1 à 15 minutes, 15 par défaut */
-function minutes(m) { return m + (m > 1 ? ' minutes' : ' minute'); }
-function dureeOk(m) { m = parseInt(m, 10); return m >= 1 && m <= 15 ? m : 15; }
 function reglagesPublics(reg) {
   const out = {};
-  Object.keys(reg || {}).forEach(function (pid) { const r = reg[pid] || {}; out[pid] = { actif: !!r.actif, ronde: r.ronde || '', correction: r.correction !== false, avecCode: !!r.code, duree: dureeOk(r.duree) }; });
+  Object.keys(reg || {}).forEach(function (pid) { const r = reg[pid] || {}; out[pid] = { actif: !!r.actif, ronde: r.ronde || '', correction: r.correction !== false, avecCode: !!r.code }; });
   return out;
 }
 /* les réglages des tests en classe sont relus au plus toutes les 15 secondes */
@@ -2271,7 +2262,6 @@ function vClasseIntro(pid) {
   const n = par.test.conj + par.test.phr;
   affiche('<p class="sur-titre">' + nb(par.titre) + '</p><h1>Test en classe</h1><section class="bloc"><ul class="regles">' +
     li2('<b>' + n + ' questions</b>. Tu as <b>une seule tentative</b>.', n + ' vragen. Je hebt maar één poging.') +
-    li2('Tu as <b>' + minutes(dureeOk(r.duree)) + '</b>. Quand le temps est fini, le test est remis automatiquement. Les questions sans réponse comptent comme fausses.', 'Je hebt ' + dureeOk(r.duree) + (dureeOk(r.duree) > 1 ? ' minuten.' : ' minuut.') + ' Als de tijd om is, wordt de toets automatisch ingediend. Vragen zonder antwoord tellen als fout.') +
     li2('Le test s\'ouvre <b>en plein écran</b>. Pas de théorie, pas de copier-coller.', 'De toets opent op volledig scherm. Geen theorie, geen kopiëren en plakken.') +
     li2('<b>Ne quitte pas la page.</b> Ton professeur voit chaque fois que tu changes d\'onglet ou de fenêtre, à quelle heure et combien de temps.', 'Verlaat de pagina niet. Je leerkracht ziet elke keer dat je van tabblad of venster wisselt, hoe laat en hoe lang.') +
     '</ul>' + (r.avecCode ? '<label for="in-code-classe" class="code-classe">Code donné par ton professeur<input id="in-code-classe" type="text" autocomplete="off" maxlength="30"></label>' : '') +
@@ -2284,12 +2274,7 @@ function vClasseIntro(pid) {
     const e = ETAT.eleve;
     Backend.debutClasse({ pid: pid, ronde: r.ronde, code: r.avecCode ? $('#in-code-classe').value : '', cle: e.cle, nom: e.prenom + ' ' + e.nom, annee: e.annee + 'e', finalite: nomFin(e.fin), module: par.titre })
       .then(function (rep) {
-        if (rep && rep.ok) {
-          /* le temps compte à partir du premier début : rouvrir le test ne donne pas de temps en plus */
-          const ecoule = rep.debut && rep.maintenant ? Math.max(0, (new Date(rep.maintenant) - new Date(rep.debut)) / 1000) : 0;
-          vTest(pid, { ronde: r.ronde, correction: r.correction, restant: Math.round(dureeOk(r.duree) * 60 - ecoule) });
-          return;
-        }
+        if (rep && rep.ok) { vTest(pid, { ronde: r.ronde, correction: r.correction }); return; }
         pleinEcran(false); b.disabled = false; b.textContent = 'Commencer le test';
         err.hidden = false;
         err.textContent = { code: 'Ce code n\'est pas correct.', deja: 'Tu as déjà remis ce test.', ferme: 'Ce test n\'est plus ouvert.', auth: 'Reconnecte-toi avec ton compte de l\'école.' }[rep && rep.error] || 'Le test ne peut pas démarrer. Réessaie.';
@@ -2317,33 +2302,16 @@ function vTest(pid, classe) {
     '<form id="f-test" class="test-form" novalidate autocomplete="off">' +
     '<h2>A. ' + t2(CONSIGNE.conj) + '</h2><ol class="test-liste">' + qs.slice(0, par.test.conj).map(ligne).join('') + '</ol>' +
     '<h2>B. ' + t2(CONSIGNE.phr) + '</h2><ol class="test-liste">' + qs.slice(par.test.conj).map(function (q, i) { return ligne(q, i + par.test.conj); }).join('') + '</ol>' +
-    '<div class="test-pied">' + (classe ? '<div class="minuteur" id="t-temps" role="timer" aria-live="off"></div>' : '') + '<div class="alerte-sortie" id="t-alerte" role="alert" hidden></div>' + barreAccents() + '<div class="confirm" id="t-confirm" hidden></div><div class="actions"><button type="submit" class="btn primaire grand">Remettre le test</button></div></div></form>', classe ? [] : filPresent(par.titre), true);
+    '<div class="test-pied"><div class="alerte-sortie" id="t-alerte" role="alert" hidden></div>' + barreAccents() + '<div class="confirm" id="t-confirm" hidden></div><div class="actions"><button type="submit" class="btn primaire grand">Remettre le test</button></div></div></form>', classe ? [] : filPresent(par.titre), true);
   const f = $('#f-test');
   const champs = Array.prototype.slice.call(f.querySelectorAll('input.rep'));
   champs.forEach(function (c, i) {
     c.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); if (champs[i + 1]) champs[i + 1].focus(); } });
   });
   champs[0].focus();
-  let confirme = false, fini = false;
-  const remettre = function (auto) {
-    if (fini) return; fini = true;
-    const saisies = champs.map(function (c) { return c.value; }), g = Garde.arreter();
-    if (auto) g.detail = 'Remis automatiquement : temps écoulé' + (g.detail ? ' | ' + g.detail : '');
-    corrigerTest(pid, qs, saisies, Math.round((Date.now() - debut) / 1000), g, classe ? Object.assign({ auto: !!auto }, classe) : null);
-  };
-  if (classe && classe.restant != null) {
-    const fin = Date.now() + classe.restant * 1000, el = $('#t-temps');
-    const tic = function () {
-      const r = Math.max(0, Math.round((fin - Date.now()) / 1000));
-      el.innerHTML = '<span>Temps restant</span><b>' + Math.floor(r / 60) + ':' + String(r % 60).padStart(2, '0') + '</b>';
-      el.classList.toggle('presque', r <= 60);
-      if (r <= 0) { clearInterval(ETAT.minuterie); ETAT.minuterie = null; remettre(true); }
-    };
-    tic(); if (!fini) ETAT.minuterie = setInterval(tic, 1000);
-  }
+  let confirme = false;
   f.addEventListener('submit', function (ev) {
     ev.preventDefault();
-    if (fini) return;
     const vides = champs.filter(function (c) { return !norm(c.value); }).length;
     if (vides && !confirme) {
       const c = $('#t-confirm'); c.hidden = false;
@@ -2353,7 +2321,8 @@ function vTest(pid, classe) {
       $('#t-non').onclick = function () { c.hidden = true; confirme = false; const v = champs.filter(function (x) { return !norm(x.value); })[0]; if (v) v.focus(); };
       return;
     }
-    remettre(false);
+    const saisies = champs.map(function (c) { return c.value; }), g = Garde.arreter();
+    corrigerTest(pid, qs, saisies, Math.round((Date.now() - debut) / 1000), g, classe);
   });
 }
 function corrigerTest(pid, qs, saisies, duree, g, classe) {
@@ -2371,7 +2340,7 @@ function corrigerTest(pid, qs, saisies, duree, g, classe) {
     enregistrer({ module: par.titre, moduleId: pid, etape: 'Test en classe', type: 'test-classe', ronde: classe.ronde }, res);
     if (!classe.correction) {
       affiche('<p class="sur-titre">' + nb(par.titre) + '</p><h1>Test remis</h1><section class="resultat"><div class="score-grand ' + (reussi ? 'ok' : pct >= 50 ? 'moyen' : 'bas') + '"><span class="pct">' + pct + '<small> %</small></span><span class="sur">' + correct + ' sur ' + qs.length + '</span></div>' +
-        '<div class="resultat-txt"><p class="msg">' + (classe.auto ? 'Le temps est écoulé : ton test est remis.' : 'Merci, ton test est remis.') + '</p><p class="conseil">' + t2(['Ton professeur te montrera la correction.', 'Je leerkracht toont je later de verbetering.']) + '</p></div></section>' +
+        '<div class="resultat-txt"><p class="msg">Merci, ton test est remis.</p><p class="conseil">' + t2(['Ton professeur te montrera la correction.', 'Je leerkracht toont je later de verbetering.']) + '</p></div></section>' +
         '<div class="actions">' + bouton('Retour au parcours', function () { vPresent(par.onglet); }, 'primaire') + '</div>', filPresent(par.titre));
       return;
     }
@@ -2389,7 +2358,7 @@ function corrigerTest(pid, qs, saisies, duree, g, classe) {
   const cles = Object.keys(faibles).sort(function (a, b) { return faibles[b] - faibles[a]; });
   let h = '<p class="sur-titre">' + nb(par.titre) + '</p><h1>Résultat du test</h1>' +
     '<section class="resultat"><div class="score-grand ' + (reussi ? 'ok' : 'bas') + '"><span class="pct">' + pct + '<small> %</small></span><span class="sur">' + correct + ' sur ' + qs.length + '</span></div>' +
-    '<div class="resultat-txt"><p class="msg">' + (classe ? (classe.auto ? 'Le temps est écoulé : ton test est remis.' : 'Merci, ton test est remis.') : reussi ? 'Bravo, tu as réussi le parcours !' : 'Pas encore réussi : il faut ' + CONFIG.SEUIL + ' %.') + '</p>' +
+    '<div class="resultat-txt"><p class="msg">' + (classe ? 'Merci, ton test est remis.' : reussi ? 'Bravo, tu as réussi le parcours !' : 'Pas encore réussi : il faut ' + CONFIG.SEUIL + ' %.') + '</p>' +
     (cles.length ? '<p class="conseil">À revoir : ' + cles.map(function (k) { return NOM_LISTE[k] + ' (' + faibles[k] + ' erreur' + (faibles[k] > 1 ? 's' : '') + ')'; }).join(', ') + '.</p>' : '<p class="conseil">Aucune erreur. Félicitations !</p>') +
     (sorties ? '<p class="conseil sorties-note">Tu as quitté la page du test ' + sorties + ' fois. Ton professeur le voit dans ses résultats.</p>' : '') + '</div></section>' +
     '<section class="bloc"><div class="corr-tete"><h2>Correction</h2>' + (correct < qs.length && correct > 0 ? '<label class="bascule"><input type="checkbox" id="seul-err"> Voir seulement mes erreurs</label>' : '') + '</div>' +
@@ -2870,12 +2839,11 @@ function rendreProfClasse() {
   let h = '<h1>Tests en classe</h1><p class="chapo">Cochez « Ouvert » pour lancer un test pendant le cours, puis fermez-le à la fin. Chaque ouverture est une nouvelle série : les élèves ne peuvent le faire qu\'une fois par série.</p>';
   Object.keys(PARCOURS).forEach(function (pid) {
     const par = PARCOURS[pid], r = reg[pid] || {};
-    h += '<section class="bloc classe-carte' + (r.actif ? ' ouvert' : '') + '"><div class="classe-tete"><div><h2>' + nb(par.titre) + '</h2><p class="meta">' + (par.public === 'transition' ? 'Transition seulement' : 'Toutes les classes') + ' · ' + (par.test.conj + par.test.phr) + ' questions · ' + minutes(dureeOk(r.duree)) + '</p></div>' +
+    h += '<section class="bloc classe-carte' + (r.actif ? ' ouvert' : '') + '"><div class="classe-tete"><div><h2>' + nb(par.titre) + '</h2><p class="meta">' + (par.public === 'transition' ? 'Transition seulement' : 'Toutes les classes') + ' · ' + (par.test.conj + par.test.phr) + ' questions</p></div>' +
       '<span class="badge ' + (r.actif ? 'ok' : 'ferme') + '">' + (r.actif ? 'Ouvert' : 'Fermé') + '</span></div>' +
       '<div class="classe-reglages">' +
       '<label class="bascule"><input type="checkbox" id="ca-' + pid + '"' + (r.actif ? ' checked' : '') + '> Ouvert</label>' +
       '<label class="bascule"><input type="checkbox" id="cc-' + pid + '"' + (r.correction === false ? '' : ' checked') + '> Montrer la correction aux élèves</label>' +
-      '<label for="cdu-' + pid + '" class="duree-classe">Durée (minutes, max. 15)<input id="cdu-' + pid + '" type="number" min="1" max="15" step="1" value="' + dureeOk(r.duree) + '"></label>' +
       '<label for="cd-' + pid + '" class="code-classe">Code à donner en classe (facultatif)<input id="cd-' + pid + '" type="text" maxlength="30" value="' + esc(r.code || '') + '" placeholder="ex. : beuk4"></label>' +
       '<button type="button" class="btn primaire petit" data-enreg="' + pid + '">Enregistrer</button><span class="discret" id="cm-' + pid + '" aria-live="polite"></span></div>' +
       (r.actif ? '<div id="live-' + pid + '" class="live">' + hLive(pid, r.ronde) + '</div>' : '') + '</section>';
@@ -2887,7 +2855,7 @@ function rendreProfClasse() {
     b.addEventListener('click', function () {
       const pid = b.getAttribute('data-enreg'), ancien = reg[pid] || {};
       const actif = $('#ca-' + pid).checked;
-      const nouveau = { actif: actif, duree: dureeOk($('#cdu-' + pid).value), correction: $('#cc-' + pid).checked, code: $('#cd-' + pid).value.trim(), ronde: actif ? (ancien.actif && ancien.ronde ? ancien.ronde : 'R' + Date.now().toString(36)) : (ancien.ronde || '') };
+      const nouveau = { actif: actif, correction: $('#cc-' + pid).checked, code: $('#cd-' + pid).value.trim(), ronde: actif ? (ancien.actif && ancien.ronde ? ancien.ronde : 'R' + Date.now().toString(36)) : (ancien.ronde || '') };
       const copie = JSON.parse(JSON.stringify(reg)); copie[pid] = nouveau;
       const m = $('#cm-' + pid); m.textContent = 'Enregistrement…'; b.disabled = true;
       Backend.ecrireReglages(ETAT.prof.code, copie).then(function (r) {
@@ -2924,7 +2892,7 @@ function hLive(pid, ronde) {
       const nb2 = e.test ? (+e.test.sorties || 0) : e.sorties.length;
       const detail = e.test && e.test.detail ? e.test.detail : e.sorties.map(function (r) { return r.detail; }).join(' | ');
       return '<tr' + (nb2 ? ' class="alerte"' : '') + '><td>' + esc(e.nom) + '</td><td>' + esc(e.classe) + '</td><td>' + dateFr(e.debut).split(' ').pop() + (e.debuts > 1 ? ' <span class="score-pill bas" title="L\'élève a rouvert le test">' + e.debuts + ' débuts</span>' : '') + '</td>' +
-        '<td>' + (e.test ? (/temps écoulé/.test(e.test.detail || '') ? '<span class="score-pill moyen">temps écoulé</span>' : '<span class="score-pill ok">remis</span>') : '<span class="score-pill moyen">en cours</span>') + '</td>' +
+        '<td>' + (e.test ? '<span class="score-pill ok">remis</span>' : '<span class="score-pill moyen">en cours</span>') + '</td>' +
         '<td class="num">' + (e.test ? e.test.score + ' %' : '–') + '</td><td class="num">' + (nb2 ? '<span class="score-pill bas">' + nb2 + '</span>' : '0') + '</td><td class="erreurs-cell">' + esc(detail) + '</td></tr>';
     }).join('') + '</tbody></table></div>';
 }
