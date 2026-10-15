@@ -4,5 +4,5 @@
    Zie de handleiding (README.md), deel 1 en deel 3. */
 window.SITE_CONFIG = {
   ENDPOINT: 'https://script.google.com/macros/s/AKfycby9fVyvs4z4E126DNwZBdzgTScqQmTgnGoFCEVZ9HJbjH2W_z3nxhVQ56WWU8PcHNDk/exec',
-  GOOGLE_CLIENT_ID: 'deborah@campusdebeuk.be'
+  GOOGLE_CLIENT_ID: '525046906653-09gvt17qup1un0fv5jte6dd1j7sprco9.apps.googleusercontent.com'
 };
